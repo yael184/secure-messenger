@@ -93,8 +93,7 @@ def hash_password(plain: str) -> str:
     Return a bcrypt hash of the password.
     This is what gets stored in the database — never the plain text.
     """
-    # your code here
-    pass
+    return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
 
 
 # ---------------------------------------------------------------------------
@@ -105,8 +104,7 @@ def verify_password(plain: str, hashed: str) -> bool:
     Return True if the plain password matches the stored hash.
     Used at login time.
     """
-    # your code here
-    pass
+    return bcrypt.checkpw(plain.encode(), hashed.encode())
 
 
 # ---------------------------------------------------------------------------
@@ -118,8 +116,8 @@ def create_token(username: str) -> str:
     then sign and return it as a string.
     Hint: use TOKEN_EXPIRE_HOURS and datetime.now(timezone.utc).
     """
-    # your code here
-    pass
+    expire = datetime.now(timezone.utc) + timedelta(hours=TOKEN_EXPIRE_HOURS)
+    return jwt.encode({"sub": username, "exp": expire}, SECRET_KEY, algorithm=ALGORITHM)
 
 
 # ---------------------------------------------------------------------------
@@ -130,8 +128,12 @@ def decode_token(token: str) -> Optional[str]:
     Decode the token and return the username ("sub" field).
     Return None if the token is invalid or expired — do not raise.
     """
-    # your code here
-    pass
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+        return username
+    except JWTError:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -146,5 +148,8 @@ def require_auth(credentials: HTTPAuthorizationCredentials = Depends(_bearer)) -
     Usage in a route:
         def my_route(username: str = Depends(require_auth)):
     """
-    # your code here
-    pass
+    token = credentials.credentials
+    username = decode_token(token)
+    if username is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    return username

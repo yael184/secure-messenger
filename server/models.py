@@ -72,7 +72,10 @@ class Base(DeclarativeBase):
 class User(Base):
     __tablename__ = "users"
 
-    # your columns here
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 # ---------------------------------------------------------------------------
@@ -81,7 +84,11 @@ class User(Base):
 class Message(Base):
     __tablename__ = "messages"
 
-    # your columns here
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sender: Mapped[str] = mapped_column(String, nullable=False)
+    recipient: Mapped[str] = mapped_column(String, nullable=False)
+    ciphertext: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 def create_tables():
