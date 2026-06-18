@@ -34,9 +34,20 @@ import base64
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
-# 32 bytes = 256-bit key. os.urandom is cryptographically secure.
-# In production: load this from an environment variable, never hardcode it.
-_KEY: bytes = os.urandom(32)
+# 32 bytes = 256-bit key, persisted to disk so it survives server restarts.
+# In production: load from an environment variable or a secrets manager.
+_KEY_FILE = os.path.join(os.path.dirname(__file__), "..", "secret.key")
+
+def _load_or_create_key() -> bytes:
+    if os.path.exists(_KEY_FILE):
+        with open(_KEY_FILE, "rb") as f:
+            return f.read()
+    key = os.urandom(32)
+    with open(_KEY_FILE, "wb") as f:
+        f.write(key)
+    return key
+
+_KEY: bytes = _load_or_create_key()
 
 
 def encrypt(plaintext: str) -> str:

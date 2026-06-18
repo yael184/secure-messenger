@@ -1,55 +1,58 @@
 # Secure Messenger
 
-A secured REST API for private messaging with end-to-end encryption and JWT authentication.
-
-## Stage 1: The Foundation
-
-By the end of Stage 1, users can register, login, send encrypted messages, and read them back. No real-time yet — that is Stage 2. Just a solid, secure backend.
+A real-time encrypted messaging platform with end-to-end encryption, JWT authentication, and instant message delivery via Server-Sent Events (SSE).
 
 ## Features
 
 - **User Authentication**: Registration and login with bcrypt password hashing
-- **JWT Tokens**: Secure token-based authentication with expiration
-- **Encrypted Messaging**: End-to-end encryption for all messages
-- **Message Storage**: SQLAlchemy ORM with SQLite database
-- **API Security**: Bearer token authentication on protected routes
+- **JWT Tokens**: Secure token-based authentication (24-hour expiry)
+- **Encrypted Messaging**: AES-256-GCM encryption for all stored messages
+- **Message Storage**: SQLAlchemy ORM with SQLite
+- **Real-Time Delivery**: Server-Sent Events (SSE) — no polling
+- **Web UI**: Browser-based chat interface served at `/`
+- **CLI Client**: Interactive terminal client
+- **Emotion Camera**: Webcam-based emotion detection that inserts emoji into messages (requires a separate emotion service at `http://localhost:5001`)
 
 ## Installation
 
 ### Prerequisites
 - Python 3.8+
-- pip
 
 ### Setup
 
-1. Clone the repository:
 ```bash
 git clone <repository-url>
 cd secure-messenger
-```
-
-2. Create a virtual environment:
-```bash
 python -m venv .venv
-.venv\Scripts\activate  # On Windows
-source .venv/bin/activate  # On macOS/Linux
-```
-
-3. Install dependencies:
-```bash
+.venv\Scripts\activate       # Windows
+source .venv/bin/activate    # macOS/Linux
 pip install -r requirements.txt
 ```
 
-## Running the Server
+## Running
 
-Start the development server:
+### Server
 ```bash
 uvicorn server.main:app --reload
 ```
 
-The API will be available at `http://localhost:8000`
+- API + Web UI: `http://localhost:8000`
+- Interactive API docs: `http://localhost:8000/docs`
 
-Access the interactive API documentation at `http://localhost:8000/docs`
+### CLI Client (optional)
+```bash
+python -m client.client
+```
+
+### Seed Test Data
+```bash
+python seed.py
+```
+
+Creates three test users:
+- `alice` / `alice123`
+- `bob` / `bob123`
+- `charlie` / `charlie123`
 
 ## API Endpoints
 
@@ -57,7 +60,7 @@ Access the interactive API documentation at `http://localhost:8000/docs`
 
 #### Register
 - **POST** `/register`
-- **Body**: `{ "username": "alice", "password": "secret123" }`
+- **Body**: `{ "username": "alice", "password": "secret123" }` (username ≥ 3 chars, password ≥ 6 chars)
 - **Response**: `{ "message": "User registered successfully" }`
 
 #### Login
@@ -67,94 +70,115 @@ Access the interactive API documentation at `http://localhost:8000/docs`
 
 ### Messaging
 
-All messaging endpoints require a Bearer token in the Authorization header:
+All messaging endpoints require a Bearer token:
 ```
 Authorization: Bearer <access_token>
 ```
 
 #### Send Message
-- **POST** `/send`
+- **POST** `/messages`
 - **Body**: `{ "recipient": "bob", "content": "Hello Bob!" }`
-- **Response**: 
+- **Response**:
 ```json
 {
   "id": 1,
   "sender": "alice",
   "recipient": "bob",
   "content": "Hello Bob!",
-  "created_at": "2026-05-07T10:30:00+00:00"
+  "created_at": "2026-05-27T10:30:00+00:00"
 }
 ```
 
 #### Get Messages
 - **GET** `/messages`
-- **Response**: List of all messages (sent and received)
-```json
-[
-  {
-    "id": 1,
-    "sender": "alice",
-    "recipient": "bob",
-    "content": "Hello Bob!",
-    "created_at": "2026-05-07T10:30:00+00:00"
-  }
-]
+- Returns only messages where the authenticated user is the sender or recipient.
+
+#### Stream Messages (Real-Time)
+- **GET** `/stream`
+- Opens a persistent SSE connection. Messages are pushed instantly as they are sent.
+- Auth via header: `Authorization: Bearer <token>`
+- Auth via query param: `?token=<token>` (required for browser `EventSource`)
+
+```bash
+curl -H "Authorization: Bearer <token>" http://localhost:8000/stream
 ```
+
+Messages arrive as:
+```
+data: {"id":1,"sender":"alice","recipient":"bob","content":"Hello!","created_at":"..."}
+```
+
+#### Web UI
+- **GET** `/`
+- Serves the browser-based chat interface.
 
 ## Project Structure
 
 ```
 secure-messenger/
 ├── server/
-│   ├── __init__.py
-│   ├── main.py           # FastAPI app initialization
-│   ├── auth.py           # Authentication functions (hashing, JWT, verification)
-│   ├── crypto.py         # Encryption/decryption functions
-│   ├── models.py         # SQLAlchemy models (User, Message)
-│   ├── schemas.py        # Pydantic request/response schemas
-│   └── routes.py         # API endpoint definitions
+│   ├── main.py          # FastAPI app, lifespan, router registration, serves /
+│   ├── routes.py        # All API route handlers
+│   ├── auth.py          # bcrypt hashing, JWT creation/validation, auth dependencies
+│   ├── crypto.py        # AES-256-GCM encrypt/decrypt
+│   ├── broadcaster.py   # SSE fan-out manager
+│   ├── models.py        # SQLAlchemy models (User, Message) + DB setup
+│   └── schemas.py       # Pydantic request/response schemas
+├── client/
+│   └── client.py        # Interactive CLI client
+├── emotion-service/
+│   ├── app.py           # Flask emotion detection microservice (DeepFace)
+│   └── requirements.txt
+├── static/
+│   └── index.html       # Browser chat UI with emotion camera feature
 ├── tests/
-│   ├── __init__.py
-│   └── test_app.py       # Unit tests
-├── requirements.txt      # Project dependencies
-├── STAGE_1.md           # Stage 1 specifications
-└── README.md            # This file
+│   └── test_app.py      # 23 tests (auth, encryption, messaging, SSE)
+├── requirements.txt
+├── seed.py              # Populates DB with sample users and messages
+└── README.md
 ```
 
-## Security Features
+## Security
 
-### Password Storage
-- Passwords are hashed using **bcrypt** with salt
-- Plain text passwords are never stored in the database
-- Even the system cannot recover the original password
-
-### JWT Tokens
-- Tokens are signed with a secret key
-- Include expiration time (configurable)
-- Bearer token authentication on protected routes
-
-### Message Encryption
-- All messages are encrypted before storage
-- Only the ciphertext is stored in the database
-- Decrypted on retrieval for the client
+- Passwords hashed with **bcrypt** (never stored in plain text)
+- JWT tokens signed with HS256, expire after 24 hours
+- Messages encrypted with **AES-256-GCM** before storage; only ciphertext in DB
+- Fresh random nonce per message — identical messages produce different ciphertexts
+- Tampered ciphertext raises an exception on decryption
+- `/stream` requires a valid JWT (header or query param)
+- Users can only retrieve messages they sent or received
 
 ## Testing
 
-Run the test suite:
 ```bash
-pytest tests/
+pytest tests/ -v
 ```
 
-## Environment Variables
+23 tests covering:
+- Authentication (register, login, token validation)
+- Encryption (round-trip, nonce uniqueness, tamper detection, DB storage)
+- Messaging (send, retrieve, message privacy)
+- SSE (connection, auth rejection, broadcast delivery, multi-client broadcast)
 
-Create a `.env` file if you need to customize:
-- `SECRET_KEY`: JWT signing key (auto-generated if not set)
-- `TOKEN_EXPIRE_HOURS`: JWT token expiration time (default: 24)
-- `DATABASE_URL`: SQLite database path (default: `sqlite:///messages.db`)
+## How Real-Time Messaging Works
 
-## What's Next
+```
+User A — POST /messages
+    ├─ Encrypt content
+    ├─ Save to DB
+    └─ broadcaster.publish()
+            ├─→ User B's /stream queue
+            ├─→ User C's /stream queue
+            └─→ User D's /stream queue
+```
 
-**Stage 2**: Real-time messaging with WebSockets for live conversations.
+Each connected `/stream` client has its own async queue. The `Broadcaster` enqueues every published message to all active queues. Disconnections are handled gracefully.
+
+## Emotion Camera (Web UI)
+
+The web UI includes a 📷 button that opens a webcam modal. It captures frames once per second and sends them to an emotion detection microservice at `http://localhost:5001/analyze`. The service returns an emotion label and emoji, which can be inserted directly into the message input.
+
+The main messenger server does not need to run the emotion service — it is an optional companion.
 
 ## License
 

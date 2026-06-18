@@ -74,7 +74,7 @@ from typing import Optional
 
 import bcrypt
 from jose import JWTError, jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 
@@ -150,6 +150,27 @@ def require_auth(credentials: HTTPAuthorizationCredentials = Depends(_bearer)) -
     """
     token = credentials.credentials
     username = decode_token(token)
+    if username is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    return username
+
+
+_bearer_optional = HTTPBearer(auto_error=False)
+
+
+def require_auth_stream(
+    token: Optional[str] = Query(default=None),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_optional),
+) -> str:
+    """
+    Auth dependency for /stream — accepts the JWT from either:
+      - Authorization: Bearer <token>  (CLI client)
+      - ?token=<token> query param     (browser EventSource, which can't set headers)
+    """
+    raw = (credentials.credentials if credentials else None) or token
+    if not raw:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    username = decode_token(raw)
     if username is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     return username

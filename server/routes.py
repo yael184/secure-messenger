@@ -60,18 +60,21 @@ USEFUL PATTERN — how to save a new row:
   db.refresh(new_user)   ← fills in the auto-generated id and created_at
 """
 
+import json
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sse_starlette.sse import EventSourceResponse
 
 from .models import User, Message, get_db
 from .schemas import (
     RegisterRequest, LoginRequest, TokenResponse,
     SendMessageRequest, MessageResponse,
 )
-from .auth import hash_password, verify_password, create_token, require_auth
+from .auth import hash_password, verify_password, create_token, require_auth, require_auth_stream
 from .crypto import encrypt, decrypt
+from .broadcaster import broadcaster
 
 
 log = logging.getLogger(__name__)
@@ -112,7 +115,7 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
 # TODO 3 — Send a message (authenticated)
 # ---------------------------------------------------------------------------
 @router.post("/messages", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
-def send_message(
+async def send_message(
     body: SendMessageRequest,
     db: Session = Depends(get_db),
     username: str = Depends(require_auth),
@@ -123,13 +126,18 @@ def send_message(
     db.commit()
     db.refresh(new_message)
     decrypted_content = decrypt(new_message.ciphertext)
-    return MessageResponse(
+    response = MessageResponse(
         id=new_message.id,
         sender=new_message.sender,
         recipient=new_message.recipient,
         content=decrypted_content,
         created_at=new_message.created_at
     )
+    
+    # Broadcast the message to all connected SSE clients
+    await broadcaster.publish(response.model_dump(mode="json"))
+    
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -154,3 +162,23 @@ def get_messages(
             created_at=msg.created_at
         ))
     return response_messages
+
+
+# ---------------------------------------------------------------------------
+# STAGE 2 — Stream messages via Server-Sent Events
+# ---------------------------------------------------------------------------
+@router.get("/stream")
+async def stream(
+    username: str = Depends(require_auth_stream),
+) -> EventSourceResponse:
+    """
+    SSE stream — client holds open connection, receives messages in real time.
+
+    Accepts auth via Authorization: Bearer header (CLI) OR ?token= query param
+    (browser EventSource, which cannot set custom headers).
+    """
+    async def event_generator():
+        async for message in broadcaster.subscribe(username):
+            yield {"data": json.dumps(message)}
+
+    return EventSourceResponse(event_generator())

@@ -23,6 +23,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 
 from .models import create_tables
 from .routes import router
@@ -49,3 +50,8 @@ app = FastAPI(
 )
 
 app.include_router(router)
+
+
+@app.get("/")
+def serve_ui():
+    return FileResponse("static/index.html")
