@@ -69,6 +69,8 @@ CONCEPT 3 — FASTAPI DEPENDENCY INJECTION
     Authorization: Bearer eyJhbGc...
 """
 
+import os
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -78,7 +80,30 @@ from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 
-SECRET_KEY = "change-this-to-a-long-random-string-in-production"
+def _load_jwt_secret() -> str:
+    """
+    Resolve the JWT signing secret WITHOUT hardcoding it in source.
+      1. JWT_SECRET environment variable, if set (preferred for production).
+      2. Otherwise a persisted random secret in ../jwt_secret.key — generated
+         once and reused, so signed tokens survive server restarts.
+    Mirrors the key-handling pattern in crypto.py.
+    """
+    env_secret = os.environ.get("JWT_SECRET")
+    if env_secret:
+        return env_secret
+
+    key_file = os.path.join(os.path.dirname(__file__), "..", "jwt_secret.key")
+    if os.path.exists(key_file):
+        with open(key_file, "r", encoding="utf-8") as f:
+            return f.read().strip()
+
+    secret = secrets.token_urlsafe(48)
+    with open(key_file, "w", encoding="utf-8") as f:
+        f.write(secret)
+    return secret
+
+
+SECRET_KEY = _load_jwt_secret()
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_HOURS = 24
 

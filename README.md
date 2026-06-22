@@ -148,6 +148,18 @@ secure-messenger/
 - `/stream` requires a valid JWT (header or query param)
 - Users can only retrieve messages they sent or received
 
+## Design Decisions & Trade-offs
+
+Why each technology was chosen, and what a production version would need to change:
+
+- **bcrypt (not SHA-256/MD5) for passwords** — bcrypt is *intentionally slow* and salted per-password, so a leaked database is expensive to brute-force. Fast hashes like SHA-256 are designed for speed, which is exactly wrong for password storage.
+- **AES-256-GCM (not AES-CBC) for messages** — GCM is *authenticated* encryption: it gives confidentiality **and** integrity, so any tampering with a stored blob fails decryption instead of returning garbage. A fresh 12-byte nonce per message means identical plaintexts produce different ciphertexts. The nonce is stored alongside the ciphertext (it is not secret).
+- **SSE (not WebSockets) for real-time delivery** — messaging here is one-directional server→client push, which is exactly what SSE provides over plain HTTP, with auto-reconnect built into the browser `EventSource`. WebSockets add bidirectional complexity we don't need at this stage.
+- **JWT (stateless) for sessions** — the server verifies a signed token instead of looking up a session store on every request. Trade-off: tokens can't be revoked before their 24h expiry without extra infrastructure (a denylist).
+- **Key management** — both the AES key (`secret.key`) and the JWT secret (`jwt_secret.key`) are loaded from disk (or, for the JWT secret, the `JWT_SECRET` env var) and are **git-ignored**. Because they persist across restarts, **stored messages remain decryptable and issued tokens stay valid after a restart** — the common failure mode of generating a fresh key at startup is avoided. In production these belong in a secrets manager.
+
+**What a production version would still need:** rate limiting on `POST /login` (and "always hash" even for unknown users to close the timing/enumeration side-channel), per-recipient filtering on the SSE stream, CORS configuration for a hosted browser client, and database migrations (Alembic).
+
 ## Testing
 
 ```bash

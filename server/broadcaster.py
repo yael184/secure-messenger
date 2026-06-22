@@ -23,22 +23,27 @@ class Broadcaster:
     """Manages real-time message fan-out to multiple connected clients."""
 
     def __init__(self):
-        # Each subscriber gets their own queue
-        # When publish() is called, we enqueue the message to every queue
-        self.subscriptions: dict[str, asyncio.Queue] = {}
+        # Each open connection gets its own queue, keyed by a unique connection
+        # id (NOT the username) so the same user can hold several streams at
+        # once (e.g. two browser tabs) without one overwriting the other.
+        # When publish() is called, we enqueue the message to every queue.
+        self.subscriptions: dict[int, asyncio.Queue] = {}
+        self._next_id = 0
 
     async def subscribe(self, username: str) -> AsyncGenerator:
         """
         Open a subscription for a user.
-        
+
         Usage:
             async for message in broadcaster.subscribe(username):
                 # Yield message to client via SSE
                 yield message
         """
-        # Create a new queue for this subscriber
+        # Create a new queue for this connection under a unique id
         queue = asyncio.Queue()
-        self.subscriptions[username] = queue
+        sub_id = self._next_id
+        self._next_id += 1
+        self.subscriptions[sub_id] = queue
         log.info(f"User {username} subscribed. Total subscribers: {len(self.subscriptions)}")
 
         try:
@@ -51,8 +56,7 @@ class Broadcaster:
             raise
         finally:
             # Clean up when the connection closes
-            if username in self.subscriptions:
-                del self.subscriptions[username]
+            self.subscriptions.pop(sub_id, None)
             log.info(f"User {username} disconnected. Remaining subscribers: {len(self.subscriptions)}")
 
     async def publish(self, message: dict):
@@ -68,14 +72,14 @@ class Broadcaster:
 
         # Publish to all current subscribers
         # Use a list() copy because the dict may change during iteration if someone disconnects
-        for username, queue in list(self.subscriptions.items()):
+        for sub_id, queue in list(self.subscriptions.items()):
             try:
                 queue.put_nowait(message)
             except asyncio.QueueFull:
                 # Queue is full — client is slow or disconnected
-                log.warning(f"Queue full for user {username}, skipping message")
+                log.warning(f"Queue full for subscriber {sub_id}, skipping message")
             except Exception as e:
-                log.error(f"Error publishing to {username}: {e}")
+                log.error(f"Error publishing to subscriber {sub_id}: {e}")
 
 
 # Global broadcaster instance — shared across all requests

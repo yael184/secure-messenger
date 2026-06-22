@@ -5,3 +5,8 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .claude/
+
+# Secrets — never commit signing/encryption keys
+secret.key
+jwt_secret.key
+.env
